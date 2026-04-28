@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'node:18'
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
 
     options {
         timeout(time: 10, unit: 'MINUTES')
@@ -9,10 +14,7 @@ pipeline {
         IMAGE_NAME = "sumador"
         IMAGE_TAG = "${BUILD_NUMBER}"
 
-        // nombre del servicio docker-compose
         NEXUS_HOST = "nexus:8083"
-
-        // repo docker hosted creado en Nexus
         NEXUS_REPO = "repository/docker-hosted"
 
         FULL_IMAGE = "${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}"
@@ -73,8 +75,8 @@ pipeline {
                 withCredentials([
                     usernamePassword(
                         credentialsId: "${CREDENTIALS_ID}",
-                        usernameVariable: 'admin',
-                        passwordVariable: 'caracolesdemar2'
+                        usernameVariable: 'USER',
+                        passwordVariable: 'PASS'
                     )
                 ]) {
                     sh """
