@@ -34,7 +34,7 @@ pipeline {
                   -v "$WORKSPACE:/workspace" \
                   -w /workspace \
                   node:20-alpine \
-                  sh -c "npm ci && npm audit --audit-level=critical"
+                  sh -c 'npm install --no-fund --no-audit && npm audit --audit-level=critical'
                 '''
             }
         }
