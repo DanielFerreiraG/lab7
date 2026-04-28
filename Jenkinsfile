@@ -90,18 +90,14 @@ pipeline {
 
     post {
         always {
-            sh """
-            docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true
-            docker rmi ${FULL_IMAGE} || true
-            """
-        }
-
-        success {
-            echo "Pipeline OK"
-        }
-
-        failure {
-            echo "Pipeline FAILED"
+            script {
+                if (env.IMAGE_NAME) {
+                    sh """
+                    docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true
+                    docker rmi ${FULL_IMAGE} || true
+                    """
+                }
+            }
         }
     }
 }
