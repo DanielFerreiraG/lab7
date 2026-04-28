@@ -11,14 +11,15 @@ services:
     networks:
       - DEVOPS_NET
   jenkins-curso:
-    build: .
-    user: root
-    privileged: true
+    image: docker.io/mguazzardo/pipe-seg
+    restart: on-failure
     volumes:
       - jenkins-data:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - 8080:8080
+    networks:
+      - DEVOPS_NET 
 
 volumes:
   nexus-data:
