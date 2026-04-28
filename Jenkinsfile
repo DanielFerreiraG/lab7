@@ -6,11 +6,11 @@ pipeline {
     }
 
     environment {
-        NEXUS_URL = "http://nexus:8083"
+        NEXUS_URL = "http://127.0.0.1:8083"
         CREDENTIALS_ID = "nexus-credentials"
         IMAGE_NAME = "sumador"
         IMAGE_TAG = "${env.BUILD_NUMBER}"
-        NEXUS_HOST = "nexus:8083"
+        NEXUS_HOST = "127.0.0.1:8083"
         NEXUS_REPO = "myrepo"
         NEXUS_IMAGE = "${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}"
     }
@@ -41,7 +41,7 @@ pipeline {
                 script {
                     withCredentials([usernamePassword(credentialsId: CREDENTIALS_ID, usernameVariable: 'NEXUS_USERNAME', passwordVariable: 'NEXUS_PASSWORD')]) {
                         sh """
-                        echo "${NEXUS_PASSWORD}" | docker login ${NEXUS_HOST} -u "${NEXUS_USERNAME}" --password-stdin
+                        echo "\$NEXUS_PASSWORD" | docker login ${NEXUS_HOST} -u "\$NEXUS_USERNAME" --password-stdin
                         docker push ${NEXUS_IMAGE}
                         docker logout ${NEXUS_HOST} || true
                         """
