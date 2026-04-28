@@ -2,72 +2,82 @@ pipeline {
     agent any
 
     options {
-        timeout(time: 2, unit: 'MINUTES') // Tiempo máximo para la ejecución del pipeline
+        timeout(time: 15, unit: 'MINUTES')
+        disableConcurrentBuilds()
     }
 
     environment {
-        NEXUS_URL = "http://localhost:8083"
-        CREDENTIALS_ID = "f0142294-69d8-4e13-9215-33104e705eb6"
-        IMAGE_NAME = "sumador" // Nombre de la imagen Docker
-        IMAGE_TAG = "${env.BUILD_NUMBER}" // Etiqueta de la imagen basada en el número de build
-        NEXUS_HOST = "localhost:8083" // Host y puerto de Nexus
-        NEXUS_REPO = "repository/myrepo" // Ruta del repositorio en Nexus
-        ARTIFACT_ID = "elbuo8/webapp:${env.BUILD_NUMBER}"
+        IMAGE_NAME = "webapp"
+        IMAGE_TAG = "${env.BUILD_NUMBER}"
+        NEXUS_DOCKER_HOST = "nexus:8082"
+        NEXUS_DOCKER_REPO = "devsecops-webapp"
+        NEXUS_CREDENTIALS_ID = "nexus-credentials"
     }
 
     stages {
-        stage('Build Docker Image') {
+        stage('Build Docker image') {
             steps {
-                echo "Building Docker image..."
-                sh """
-                docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                """
+                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
             }
         }
 
         stage('Run tests') {
-          steps {
-            sh "docker run ${IMAGE_NAME}:${IMAGE_TAG} npm test"
-          }
-        }
-        
-        stage('Tag Docker Image') {
             steps {
-                echo "Tagging Docker image for Nexus repository..."
-                sh """
-                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
-                """
+                sh "docker run --rm ${IMAGE_NAME}:${IMAGE_TAG} npm test"
             }
         }
 
-        stage('Deploy Image') {
-          steps {
-            withCredentials([usernamePassword(credentialsId: CREDENTIALS_ID, usernameVariable: 'NEXUS_USERNAME', passwordVariable: 'NEXUS_PASSWORD')]) {
-                script {
-                  docker.withRegistry("${NEXUS_URL}", "${CREDENTIALS_ID}") {
-                    def imageName = "${IMAGE_NAME}:${IMAGE_TAG}"
-                    def dockerImage = docker.build(imageName, '.')
-                    dockerImage.push()
-                  }
+        stage('Dependency scan (npm audit)') {
+            steps {
+                sh '''
+                docker run --rm \
+                  -v "$WORKSPACE:/workspace" \
+                  -w /workspace \
+                  node:20-alpine \
+                  sh -c "npm ci && npm audit --audit-level=critical"
+                '''
+            }
+        }
+
+        stage('Image scan (Trivy)') {
+            steps {
+                sh '''
+                docker run --rm \
+                  -v /var/run/docker.sock:/var/run/docker.sock \
+                  aquasec/trivy:latest image \
+                  --no-progress \
+                  --severity CRITICAL \
+                  --exit-code 1 \
+                  ${IMAGE_NAME}:${IMAGE_TAG}
+                '''
+            }
+        }
+
+        stage('Tag image for Nexus') {
+            steps {
+                sh "docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${NEXUS_DOCKER_HOST}/${NEXUS_DOCKER_REPO}/${IMAGE_NAME}:${IMAGE_TAG}"
+            }
+        }
+
+        stage('Push image to Nexus') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: "${NEXUS_CREDENTIALS_ID}", usernameVariable: 'NEXUS_USERNAME', passwordVariable: 'NEXUS_PASSWORD')]) {
+                    sh '''
+                    echo "$NEXUS_PASSWORD" | docker login ${NEXUS_DOCKER_HOST} -u "$NEXUS_USERNAME" --password-stdin
+                    docker push ${NEXUS_DOCKER_HOST}/${NEXUS_DOCKER_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
+                    docker logout ${NEXUS_DOCKER_HOST} || true
+                    '''
                 }
             }
-          }
         }
     }
 
     post {
         always {
-            echo "Cleaning up local Docker images..."
-            sh """
+            sh '''
             docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true
-            docker rmi ${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG} || true
-            """
-        }
-        success {
-            echo "Pipeline completed successfully!"
-        }
-        failure {
-            echo "Pipeline failed. Check the logs for details."
+            docker rmi ${NEXUS_DOCKER_HOST}/${NEXUS_DOCKER_REPO}/${IMAGE_NAME}:${IMAGE_TAG} || true
+            '''
         }
     }
 }
