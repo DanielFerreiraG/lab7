@@ -7,7 +7,7 @@ pipeline {
 
     environment {
         NEXUS_URL = "http://127.0.0.1:8083"
-        CREDENTIALS_ID = "nexus-credential"
+        CREDENTIALS_ID = "nexus-credentials"
         IMAGE_NAME = "sumador"
         IMAGE_TAG = "${env.BUILD_NUMBER}"
         NEXUS_HOST = "127.0.0.1:8083"
