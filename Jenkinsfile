@@ -29,13 +29,7 @@ pipeline {
 
         stage('Dependency scan (npm audit)') {
             steps {
-                sh '''
-                docker run --rm \
-                  -v "$WORKSPACE:/workspace" \
-                  -w /workspace \
-                  node:20-alpine \
-                  sh -c 'npm install --no-fund --no-audit && npm audit --audit-level=critical'
-                '''
+                sh "docker run --rm ${IMAGE_NAME}:${IMAGE_TAG} sh -c 'npm audit --audit-level=critical'"
             }
         }
 
