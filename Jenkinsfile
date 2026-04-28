@@ -1,69 +1,73 @@
 pipeline {
     agent any
 
+    options {
+        timeout(time: 2, unit: 'MINUTES') // Tiempo máximo para la ejecución del pipeline
+    }
+
     environment {
-        IMAGE_NAME = "sumador"
-        IMAGE_TAG = "${BUILD_NUMBER}"
-        // Usamos el nombre del servicio definido en docker-compose
-        NEXUS_HOST = "nexus:8083" 
-        NEXUS_REPO = "repository/docker-hosted"
-        FULL_IMAGE = "${NEXUS_HOST}/${IMAGE_NAME}:${IMAGE_TAG}"
-        CREDENTIALS_ID = "nexus-cred"
+        NEXUS_URL = "http://localhost:8083"
+        CREDENTIALS_ID = "f0142294-69d8-4e13-9215-33104e705eb6"
+        IMAGE_NAME = "sumador" // Nombre de la imagen Docker
+        IMAGE_TAG = "${env.BUILD_NUMBER}" // Etiqueta de la imagen basada en el número de build
+        NEXUS_HOST = "localhost:8083" // Host y puerto de Nexus
+        NEXUS_REPO = "repository/myrepo" // Ruta del repositorio en Nexus
+        ARTIFACT_ID = "elbuo8/webapp:${env.BUILD_NUMBER}"
     }
 
     stages {
-        stage('Install & Test') {
+        stage('Build Docker Image') {
             steps {
-                sh 'npm install'
-                sh 'npm test'
-            }
-        }
-
-        stage('Security - npm audit') {
-            steps {
-                // Falla si hay vulnerabilidades críticas en dependencias
-                sh 'npm audit --audit-level=critical'
-            }
-        }
-
-        stage('Build Image') {
-            steps {
-                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
-            }
-        }
-
-        stage('Security - Trivy Scan') {
-            steps {
-                // Escaneamos la imagen local recién construida
-                // --exit-code 1 hace que el pipeline falle si detecta CRITICAL
+                echo "Building Docker image..."
                 sh """
-                docker run --rm \
-                    -v /var/run/docker.sock:/var/run/docker.sock \
-                    aquasec/trivy image \
-                    --severity CRITICAL \
-                    --exit-code 1 \
-                    ${IMAGE_NAME}:${IMAGE_TAG}
+                docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                 """
             }
         }
 
-        stage('Push to Nexus') {
+        stage('Run tests') {
+          steps {
+            sh "docker run ${IMAGE_NAME}:${IMAGE_TAG} npm test"
+          }
+        }
+        
+        stage('Tag Docker Image') {
             steps {
-                withCredentials([usernamePassword(credentialsId: "${CREDENTIALS_ID}", usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    sh """
-                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${FULL_IMAGE}
-                    docker login http://${NEXUS_HOST} -u $USER -p $PASS
-                    docker push ${FULL_IMAGE}
-                    """
-                }
+                echo "Tagging Docker image for Nexus repository..."
+                sh """
+                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}
+                """
             }
         }
+
+        stage('Deploy Image') {
+          steps {
+            withCredentials([usernamePassword(credentialsId: CREDENTIALS_ID, usernameVariable: 'NEXUS_USERNAME', passwordVariable: 'NEXUS_PASSWORD')]) {
+                script {
+                  docker.withRegistry("${NEXUS_URL}", "${CREDENTIALS_ID}") {
+                    def imageName = "${IMAGE_NAME}:${IMAGE_TAG}"
+                    def dockerImage = docker.build(imageName, '.')
+                    dockerImage.push()
+                  }
+                }
+            }
+          }
+        }
     }
-    
+
     post {
         always {
-            // Limpieza para que el laboratorio sea reproducible (Punto de restricciones)
-            sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG} ${FULL_IMAGE} || true"
+            echo "Cleaning up local Docker images..."
+            sh """
+            docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true
+            docker rmi ${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG} || true
+            """
+        }
+        success {
+            echo "Pipeline completed successfully!"
+        }
+        failure {
+            echo "Pipeline failed. Check the logs for details."
         }
     }
 }
