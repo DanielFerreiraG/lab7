@@ -11,9 +11,7 @@ services:
     networks:
       - DEVOPS_NET
   jenkins-curso:
-    image: jenkins/jenkins:lts
-    user: root
-    privileged: true
+    image: docker.io/mguazzardo/pipe-seg
     restart: on-failure
     volumes:
       - jenkins-data:/var/jenkins_home
