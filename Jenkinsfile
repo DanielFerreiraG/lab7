@@ -7,7 +7,7 @@ pipeline {
 
     environment {
         NEXUS_URL = "http://localhost:8083"
-        CREDENTIALS_ID = "f0142294-69d8-4e13-9215-33104e705eb6"
+        CREDENTIALS_ID = "nexus-credentials"
         IMAGE_NAME = "sumador" // Nombre de la imagen Docker
         IMAGE_TAG = "${env.BUILD_NUMBER}" // Etiqueta de la imagen basada en el número de build
         NEXUS_HOST = "localhost:8083" // Host y puerto de Nexus
