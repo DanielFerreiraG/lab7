@@ -1,68 +1,47 @@
 pipeline {
     agent any
 
-    options {
-        timeout(time: 10, unit: 'MINUTES')
-    }
-
     environment {
         IMAGE_NAME = "sumador"
         IMAGE_TAG = "${BUILD_NUMBER}"
-
-        // nombre del servicio docker-compose
-        NEXUS_HOST = "nexus:8083"
-
-        // repo docker hosted creado en Nexus
+        // Usamos el nombre del servicio definido en docker-compose
+        NEXUS_HOST = "nexus:8083" 
         NEXUS_REPO = "repository/docker-hosted"
-
-        FULL_IMAGE = "${NEXUS_HOST}/${NEXUS_REPO}/${IMAGE_NAME}:${IMAGE_TAG}"
-
+        FULL_IMAGE = "${NEXUS_HOST}/${IMAGE_NAME}:${IMAGE_TAG}"
         CREDENTIALS_ID = "nexus-cred"
     }
 
     stages {
-
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
-        stage('Install Dependencies') {
+        stage('Install & Test') {
             steps {
                 sh 'npm install'
+                sh 'npm test'
             }
         }
 
         stage('Security - npm audit') {
             steps {
-                sh 'npm audit --audit-level=critical || true'
+                // Falla si hay vulnerabilidades críticas en dependencias
+                sh 'npm audit --audit-level=critical'
             }
         }
 
-        stage('Run Tests') {
+        stage('Build Image') {
             steps {
-                sh 'npm test'
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                sh """
-                docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${FULL_IMAGE}
-                """
+                sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
             }
         }
 
         stage('Security - Trivy Scan') {
             steps {
+                // Escaneamos la imagen local recién construida
+                // --exit-code 1 hace que el pipeline falle si detecta CRITICAL
                 sh """
-                    docker run --rm \
+                docker run --rm \
                     -v /var/run/docker.sock:/var/run/docker.sock \
                     aquasec/trivy image \
                     --severity CRITICAL \
-                    --exit-code 0 \
+                    --exit-code 1 \
                     ${IMAGE_NAME}:${IMAGE_TAG}
                 """
             }
@@ -70,14 +49,9 @@ pipeline {
 
         stage('Push to Nexus') {
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: "${CREDENTIALS_ID}",
-                        usernameVariable: 'USER',
-                        passwordVariable: 'PASS'
-                    )
-                ]) {
+                withCredentials([usernamePassword(credentialsId: "${CREDENTIALS_ID}", usernameVariable: 'USER', passwordVariable: 'PASS')]) {
                     sh """
+                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${FULL_IMAGE}
                     docker login http://${NEXUS_HOST} -u $USER -p $PASS
                     docker push ${FULL_IMAGE}
                     """
@@ -85,21 +59,11 @@ pipeline {
             }
         }
     }
-
+    
     post {
         always {
-            sh """
-            docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true
-            docker rmi ${FULL_IMAGE} || true
-            """
-        }
-
-        success {
-            echo "Pipeline OK"
-        }
-
-        failure {
-            echo "Pipeline FAILED"
+            // Limpieza para que el laboratorio sea reproducible (Punto de restricciones)
+            sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG} ${FULL_IMAGE} || true"
         }
     }
 }
